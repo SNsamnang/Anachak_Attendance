@@ -159,7 +159,7 @@
         function startGps() {
             const empToken = document.getElementById('qrInput').value.trim();
             if (!empToken) {
-                alert('Please enter your employee QR token first.');
+                alert('Please enter your Employee ID first.');
                 return;
             }
 
@@ -237,13 +237,14 @@
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
-                    'X-CSRF-TOKEN': CSRF,
+                    'Accept':        'application/json',
+                    'X-CSRF-TOKEN':  CSRF,
                 },
                 body: JSON.stringify({
-                    employee_token: empToken,
+                    employee_id:    empToken,
                     location_token: LOCATION_TOKEN,
-                    latitude:  lat,
-                    longitude: lng,
+                    latitude:       lat,
+                    longitude:      lng,
                 })
             })
             .then(r => r.json())

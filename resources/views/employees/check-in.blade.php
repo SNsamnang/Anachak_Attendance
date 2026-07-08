@@ -152,25 +152,6 @@
             font-weight: bold;
         }
 
-        #registerSection {
-            display: none;
-        }
-
-        #registerSection .reg-title {
-            font-weight: 700;
-            font-size: 1rem;
-            margin-bottom: 1rem;
-            color: #1a1d2e;
-        }
-
-        #registerSection input {
-            border-radius: 10px;
-        }
-
-        #registerSection .btn {
-            border-radius: 10px;
-        }
-
         #pendingSection {
             display: none;
             text-align: center;
@@ -231,25 +212,6 @@
             </div>
         </div>
 
-        {{-- ── Register device section (only asks device name) ── --}}
-        <div id="registerSection">
-            <div class="reg-title">📱 Register This Device</div>
-            <p class="small text-muted mb-3">
-                This device is not registered yet. Give it a name so you can identify it later.
-            </p>
-            <div class="mb-3">
-                <label class="form-label small fw-semibold">Device Name <span class="text-muted">(optional)</span></label>
-                <input type="text" id="regDeviceName" class="form-control"
-                    placeholder="e.g. My iPhone / Samsung S24">
-            </div>
-            <button class="btn btn-primary w-100" id="regBtn" onclick="submitRegister()">
-                Register This Device
-            </button>
-            <div class="text-center mt-2">
-                <small class="text-muted">First-time registration is approved immediately.</small>
-            </div>
-        </div>
-
         {{-- ── Pending section ── --}}
         <div id="pendingSection">
             <div class="pending-icon">⏳</div>
@@ -305,11 +267,12 @@
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
-                        'X-CSRF-TOKEN': CSRF
+                        'Accept':        'application/json',
+                        'X-CSRF-TOKEN':  CSRF
                     },
                     body: JSON.stringify({
-                        qr_token: QR_TOKEN,
-                        name: navigator.userAgent.substring(0, 50),
+                        qr_token:    QR_TOKEN,
+                        name:        navigator.userAgent.substring(0, 80),
                         fingerprint: FINGERPRINT,
                     }),
                 });
@@ -317,7 +280,7 @@
                 const data = await resp.json();
 
                 if (data.success && data.token) {
-                    // ✅ Approved — stop polling, go to check-in
+                    // ✅ Approved (first-time auto-registered or same device)
                     stopPolling();
                     localStorage.setItem(EMP_ID_KEY, data.token);
                     localStorage.removeItem(PEND_KEY);
@@ -326,24 +289,25 @@
                     showCheckIn();
 
                 } else if (data.status === 'pending') {
-                    // ⏳ Pending — show pending UI and start polling
+                    // ⏳ Different device — waiting for admin approval
                     localStorage.setItem(PEND_KEY, '1');
                     localStorage.removeItem(EMP_ID_KEY);
                     deviceToken = '';
                     showPending(data.message);
-                    startPolling(); // keep checking until approved
+                    startPolling();
 
                 } else {
-                    // Unknown device, no record yet — show register form
+                    // Unexpected response — fall back to check-in if we have a cached token
                     stopPolling();
                     clearMsg();
-                    showRegister();
+                    if (deviceToken) showCheckIn();
+                    else showMsg('Could not verify device. Please try again.', 'warning');
                 }
             } catch (e) {
                 stopPolling();
                 clearMsg();
                 if (deviceToken) showCheckIn();
-                else showRegister();
+                else showMsg('Connection error. Please try again.', 'warning');
             }
         }
 
@@ -368,19 +332,11 @@
         function showCheckIn() {
             stopPolling();
             document.getElementById('checkInSection').style.display = 'block';
-            document.getElementById('registerSection').style.display = 'none';
-            document.getElementById('pendingSection').style.display = 'none';
-        }
-
-        function showRegister() {
-            document.getElementById('checkInSection').style.display = 'none';
-            document.getElementById('registerSection').style.display = 'block';
             document.getElementById('pendingSection').style.display = 'none';
         }
 
         function showPending(msg) {
             document.getElementById('checkInSection').style.display = 'none';
-            document.getElementById('registerSection').style.display = 'none';
             document.getElementById('pendingSection').style.display = 'block';
             if (msg) document.getElementById('pendingMsg').textContent = msg;
         }
@@ -412,7 +368,8 @@
                 return;
             }
             if (!deviceToken) {
-                showRegister();
+                showMsg('<span class="spin"></span>Verifying device...', 'loading');
+                await checkDevice();
                 return;
             }
 
@@ -459,13 +416,14 @@
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
-                        'X-CSRF-TOKEN': CSRF
+                        'Accept':        'application/json',
+                        'X-CSRF-TOKEN':  CSRF
                     },
                     body: JSON.stringify({
                         employee_token: QR_TOKEN,
-                        location_id: selectedLocationId,
-                        device_token: deviceToken,
-                        fingerprint: FINGERPRINT,
+                        location_id:    selectedLocationId,
+                        device_token:   deviceToken,
+                        fingerprint:    FINGERPRINT,
                         latitude,
                         longitude,
                     }),
@@ -483,19 +441,21 @@
                     document.getElementById('checkInBtn').disabled = true;
                     document.getElementById('checkInBtn').textContent = '✓ Done';
                 } else {
-                    if (resp.status === 403) {
+                    if (resp.status === 403 && (data.status === 'pending' || data.status === 'wrong_device' || data.status === 'no_device')) {
+                        // Device issue — re-verify silently (auto-registers first time or shows pending)
                         localStorage.removeItem(EMP_ID_KEY);
                         deviceToken = '';
                         if (data.status === 'pending') {
                             localStorage.setItem(PEND_KEY, '1');
                             showPending(data.message);
-                            startPolling(); // start polling from check-in error too
+                            startPolling();
                         } else {
-                            showRegister();
-                            showMsg(data.message, 'error');
+                            showMsg('<span class="spin"></span>Re-verifying device...', 'loading');
+                            await checkDevice();
                         }
                     } else {
-                        showMsg(`⚠️ ${data.message}<br>Distance: ${data.distance}m / Max: ${data.radius}m`, 'error');
+                        // Location rejection or other error — stay on check-in, just show message
+                        showMsg(`⚠️ ${data.message}`, 'error');
                     }
                 }
             } catch (err) {
@@ -505,52 +465,6 @@
             }
         });
 
-        // ── Register with custom device name ─────────────────────────
-        async function submitRegister() {
-            const name = document.getElementById('regDeviceName').value.trim() ||
-                navigator.userAgent.substring(0, 50);
-
-            const btn = document.getElementById('regBtn');
-            btn.disabled = true;
-            btn.innerHTML = '<span class="spin"></span>Registering...';
-
-            try {
-                const resp = await fetch('{{ route("devices.register") }}', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'X-CSRF-TOKEN': CSRF
-                    },
-                    body: JSON.stringify({
-                        qr_token: QR_TOKEN,
-                        name,
-                        fingerprint: FINGERPRINT
-                    }),
-                });
-
-                const data = await resp.json();
-
-                if (data.success && data.token) {
-                    localStorage.setItem(EMP_ID_KEY, data.token);
-                    localStorage.removeItem(PEND_KEY);
-                    deviceToken = data.token;
-                    showCheckIn();
-                    showMsg('✅ ' + data.message, 'success');
-                } else if (data.status === 'pending') {
-                    localStorage.setItem(PEND_KEY, '1');
-                    showPending(data.message);
-                    startPolling(); // ← start polling after submitting register form too
-                } else {
-                    showMsg(data.message || 'Registration failed.', 'error');
-                    btn.disabled = false;
-                    btn.textContent = 'Register This Device';
-                }
-            } catch (e) {
-                showMsg('Network error. Please try again.', 'error');
-                btn.disabled = false;
-                btn.textContent = 'Register This Device';
-            }
-        }
     </script>
 </body>
 
