@@ -39,13 +39,19 @@
                     <label class="form-check-label" for="isActive">Active</label>
                 </div>
             </div>
-            <div class="mb-4">
+            <div class="mb-3">
                 <div class="form-check">
                     <input class="form-check-input" type="checkbox" name="salary_enabled" value="1" id="salaryEnabled"
                         @checked(old('salary_enabled', true))>
                     <label class="form-check-label" for="salaryEnabled">Enable Salary Summaries</label>
                 </div>
                 <div class="form-text">Uncheck to hide salary features for this company's admin.</div>
+            </div>
+            <div class="mb-4">
+                <label class="form-label fw-semibold">Late Grace Period <span class="text-muted fw-normal">(minutes)</span></label>
+                <input type="number" name="grace_minutes" class="form-control" style="max-width:120px"
+                    value="{{ old('grace_minutes', 15) }}" min="0" max="120">
+                <div class="form-text">Employees are considered on-time if they check in within this many minutes after shift start.</div>
             </div>
 
             <hr>

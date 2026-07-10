@@ -53,17 +53,45 @@
                             value="{{ old('salary', $employee->salary) }}"
                             placeholder="0.00">
                     </div>
-                    {{-- Add this block after the Phone field --}}
-                    <div class="row g-2 mb-4">
-                        <div class="col">
-                            <label class="form-label fw-semibold">Work Start Time</label>
-                            <input type="time" name="work_start" class="form-control"
-                                value="{{ old('work_start', substr($employee->work_start, 0, 5)) }}" required>
+                    <div class="mb-3">
+                        <label class="form-label fw-semibold">Sessions per Day</label>
+                        <select name="sessions" id="sessionsSelect" class="form-select">
+                            <option value="1" @selected(old('sessions', $employee->sessions ?? 1) == 1)>1 Session (default)</option>
+                            <option value="2" @selected(old('sessions', $employee->sessions ?? 1) == 2)>2 Sessions</option>
+                        </select>
+                        <div class="form-text">2 sessions = morning &amp; afternoon with a break in between.</div>
+                    </div>
+
+                    <div class="p-3 rounded mb-3" style="background:#f8f9fa;border:1px solid #dee2e6">
+                        <div class="fw-semibold small text-muted mb-2" id="session1Label">SESSION 1</div>
+                        <div class="row g-2">
+                            <div class="col">
+                                <label class="form-label fw-semibold">Start Time</label>
+                                <input type="time" name="work_start" class="form-control"
+                                    value="{{ old('work_start', substr($employee->work_start ?? '08:00', 0, 5)) }}" required>
+                            </div>
+                            <div class="col">
+                                <label class="form-label fw-semibold">End Time</label>
+                                <input type="time" name="work_end" class="form-control"
+                                    value="{{ old('work_end', substr($employee->work_end ?? '12:00', 0, 5)) }}" required>
+                            </div>
                         </div>
-                        <div class="col">
-                            <label class="form-label fw-semibold">Work End Time</label>
-                            <input type="time" name="work_end" class="form-control"
-                                value="{{ old('work_end', substr($employee->work_end, 0, 5)) }}" required>
+                    </div>
+
+                    <div class="p-3 rounded mb-4" id="session2Block"
+                        style="background:#f0f7ff;border:1px solid #b6d4fe">
+                        <div class="fw-semibold small text-muted mb-2">SESSION 2</div>
+                        <div class="row g-2">
+                            <div class="col">
+                                <label class="form-label fw-semibold">Start Time</label>
+                                <input type="time" name="session2_start" class="form-control"
+                                    value="{{ old('session2_start', substr($employee->session2_start ?? '13:00', 0, 5)) }}">
+                            </div>
+                            <div class="col">
+                                <label class="form-label fw-semibold">End Time</label>
+                                <input type="time" name="session2_end" class="form-control"
+                                    value="{{ old('session2_end', substr($employee->session2_end ?? '17:00', 0, 5)) }}">
+                            </div>
                         </div>
                     </div>
 
@@ -79,4 +107,21 @@
         </div>
     </div>
 </div>
+
+@push('scripts')
+<script>
+(function () {
+    const sel = document.getElementById('sessionsSelect');
+    const blk = document.getElementById('session2Block');
+    const lbl = document.getElementById('session1Label');
+    function toggle() {
+        const two = sel.value === '2';
+        blk.style.display = two ? '' : 'none';
+        lbl.style.display  = two ? '' : 'none';
+    }
+    sel.addEventListener('change', toggle);
+    toggle();
+})();
+</script>
+@endpush
 @endsection

@@ -18,7 +18,7 @@ class EmployeeController extends Controller
         $cid = $this->authCompanyId();
         $employees = Employee::withCount('attendances')
             ->when($cid, fn($q) => $q->where('company_id', $cid))
-            ->orderBy('name')->get();
+            ->orderBy('employee_id')->get();
         return view('employees.index', compact('employees'));
     }
 
@@ -30,14 +30,19 @@ class EmployeeController extends Controller
 
     public function store(Request $request)
     {
+        $sessions = (int) $request->input('sessions', 1);
+
         $request->validate([
-            'name'       => 'required|string|max:100',
-            'department' => 'nullable|string|max:100',
-            'phone'      => 'nullable|string|max:20',
-            'work_start' => 'required|date_format:H:i',
-            'work_end'   => 'required|date_format:H:i|after:work_start',
-            'salary'     => 'nullable|numeric|min:0',
-            'company_id' => 'nullable|exists:companies,id',
+            'name'           => 'required|string|max:100',
+            'department'     => 'nullable|string|max:100',
+            'phone'          => 'nullable|string|max:20',
+            'work_start'     => 'required|date_format:H:i',
+            'work_end'       => 'required|date_format:H:i|after:work_start',
+            'sessions'       => 'nullable|integer|in:1,2',
+            'session2_start' => $sessions === 2 ? 'required|date_format:H:i' : 'nullable',
+            'session2_end'   => $sessions === 2 ? 'required|date_format:H:i|after:session2_start' : 'nullable',
+            'salary'         => 'nullable|numeric|min:0',
+            'company_id'     => 'nullable|exists:companies,id',
         ]);
 
         $companyId  = auth()->user()->is_super_admin
@@ -48,7 +53,14 @@ class EmployeeController extends Controller
 
         Employee::create(array_merge(
             $request->only('name', 'department', 'phone', 'work_start', 'work_end', 'salary'),
-            ['company_id' => $companyId, 'employee_id' => $employeeId, 'password' => '123456']
+            [
+                'company_id'     => $companyId,
+                'employee_id'    => $employeeId,
+                'password'       => '123456',
+                'sessions'       => $sessions,
+                'session2_start' => $sessions === 2 ? $request->session2_start : null,
+                'session2_end'   => $sessions === 2 ? $request->session2_end   : null,
+            ]
         ));
 
         return redirect()->route('employees.index')
@@ -80,23 +92,29 @@ class EmployeeController extends Controller
 
     public function update(Request $request, Employee $employee)
     {
+        $sessions = (int) $request->input('sessions', 1);
+
         $request->validate([
-            'name'       => 'required|string|max:100',
-            'department' => 'nullable|string|max:100',
-            'phone'      => 'nullable|string|max:20',
-            'work_start' => 'required|date_format:H:i',
-            'work_end'   => 'required|date_format:H:i|after:work_start',
-            'salary'     => 'nullable|numeric|min:0',
+            'name'           => 'required|string|max:100',
+            'department'     => 'nullable|string|max:100',
+            'phone'          => 'nullable|string|max:20',
+            'work_start'     => 'required|date_format:H:i',
+            'work_end'       => 'required|date_format:H:i|after:work_start',
+            'sessions'       => 'nullable|integer|in:1,2',
+            'session2_start' => $sessions === 2 ? 'required|date_format:H:i' : 'nullable',
+            'session2_end'   => $sessions === 2 ? 'required|date_format:H:i|after:session2_start' : 'nullable',
+            'salary'         => 'nullable|numeric|min:0',
         ]);
 
-        $employee->update($request->only(
-            'name',
-            'department',
-            'phone',
-            'work_start',
-            'work_end',
-            'salary'
+        $employee->update(array_merge(
+            $request->only('name', 'department', 'phone', 'work_start', 'work_end', 'salary'),
+            [
+                'sessions'       => $sessions,
+                'session2_start' => $sessions === 2 ? $request->input('session2_start') : null,
+                'session2_end'   => $sessions === 2 ? $request->input('session2_end')   : null,
+            ]
         ));
+
         return redirect()->route('employees.index')->with('success', 'Employee updated.');
     }
 

@@ -17,6 +17,9 @@ class Employee extends Authenticatable
         'qr_token',
         'work_start',
         'work_end',
+        'sessions',
+        'session2_start',
+        'session2_end',
         'salary',
         'password',
         'company_id',
@@ -25,8 +28,11 @@ class Employee extends Authenticatable
     protected $hidden = ['password', 'remember_token'];
 
     protected $casts = [
-        'work_start' => 'string',
-        'work_end'   => 'string',
+        'work_start'     => 'string',
+        'work_end'       => 'string',
+        'sessions'       => 'integer',
+        'session2_start' => 'string',
+        'session2_end'   => 'string',
     ];
 
     protected static function booted(): void

@@ -32,26 +32,34 @@ class AttendanceController extends Controller
     }
 
     // ── Shared: calculate check-in/out status & OT ────────────
-    private function calcStatus(Employee $employee, string $type, \Carbon\Carbon $now): array
+    private function calcStatus(Employee $employee, string $type, \Carbon\Carbon $now, int $sessionNum = 1): array
     {
-        $workStartStr = $employee->work_start ?? '08:00:00';
-        $workEndStr   = $employee->work_end   ?? '17:00:00';
+        if ($sessionNum === 2 && ($employee->sessions ?? 1) === 2 && $employee->session2_start) {
+            $workStartStr = $employee->session2_start;
+            $workEndStr   = $employee->session2_end ?? '17:00:00';
+        } else {
+            $workStartStr = $employee->work_start ?? '08:00:00';
+            $workEndStr   = $employee->work_end   ?? '17:00:00';
+        }
 
-        // Parse work start time
+        $graceMinutes = $employee->company?->grace_minutes ?? 15;
+
+        // Use the scan date so admin edits on past dates work correctly
+        $dayStart = $now->copy()->startOfDay();
+
         $workStartParts = explode(':', $workStartStr);
-        $workStart = \Carbon\Carbon::today()
+        $workStart = $dayStart->copy()
             ->setHour((int)$workStartParts[0])
             ->setMinute((int)($workStartParts[1] ?? 0))
             ->setSecond((int)($workStartParts[2] ?? 0));
 
-        // Parse work end time
         $workEndParts = explode(':', $workEndStr);
-        $workEnd = \Carbon\Carbon::today()
+        $workEnd = $dayStart->copy()
             ->setHour((int)$workEndParts[0])
             ->setMinute((int)($workEndParts[1] ?? 0))
             ->setSecond((int)($workEndParts[2] ?? 0));
 
-        $graceLimit   = $workStart->copy()->addMinutes(15);
+        $graceLimit   = $workStart->copy()->addMinutes($graceMinutes);
 
         $checkInStatus  = null;
         $checkOutStatus = null;
@@ -160,7 +168,7 @@ class AttendanceController extends Controller
             'longitude'      => 'required|numeric|between:-180,180',
         ]);
 
-        $employee = Employee::where('employee_id', $request->employee_id)->first();
+        $employee = Employee::with('company')->where('employee_id', $request->employee_id)->first();
         if (!$employee) {
             return response()->json(['success' => false, 'message' => 'Employee ID not found.'], 404);
         }
@@ -178,7 +186,11 @@ class AttendanceController extends Controller
         $type     = ($last && $last->type === 'in') ? 'out' : 'in';
         $timeStr  = $now->format('H:i · D d M Y');
 
-        $status = $this->calcStatus($employee, $type, $now);
+        $todayCount = Attendance::where('employee_id', $employee->id)
+            ->whereDate('scanned_at', $now->toDateString())->count();
+        $sessionNum = intdiv($todayCount, 2) + 1;
+
+        $status = $this->calcStatus($employee, $type, $now, $sessionNum);
 
         Attendance::create([
             'employee_id'       => $employee->id,
@@ -228,7 +240,7 @@ class AttendanceController extends Controller
         ]);
 
         /** @var Employee $employee */
-        $employee = Employee::where('qr_token', $request->employee_token)->first();
+        $employee = Employee::with('company')->where('qr_token', $request->employee_token)->first();
         if (!$employee) {
             return response()->json(['success' => false, 'message' => 'Invalid employee QR code.'], 404);
         }
@@ -280,7 +292,11 @@ class AttendanceController extends Controller
 
         $approvedDevice->update(['last_used_at' => $now]);
 
-        $status = $this->calcStatus($employee, $type, $now);
+        $todayCount = Attendance::where('employee_id', $employee->id)
+            ->whereDate('scanned_at', $now->toDateString())->count();
+        $sessionNum = intdiv($todayCount, 2) + 1;
+
+        $status = $this->calcStatus($employee, $type, $now, $sessionNum);
 
         Attendance::create([
             'employee_id'       => $employee->id,
@@ -331,6 +347,7 @@ class AttendanceController extends Controller
         if (!$employee) {
             return response()->json(['success' => false, 'message' => 'Not authenticated.'], 401);
         }
+        $employee->loadMissing('company');
 
         $fingerprint    = $request->fingerprint;
 
@@ -401,7 +418,12 @@ class AttendanceController extends Controller
         $last = $employee->lastAttendanceToday();
         $type = ($last && $last->type === 'in') ? 'out' : 'in';
         $timeStr  = $now->format('H:i · D d M Y');
-        $status   = $this->calcStatus($employee, $type, $now);
+
+        $todayCount = Attendance::where('employee_id', $employee->id)
+            ->whereDate('scanned_at', $now->toDateString())->count();
+        $sessionNum = intdiv($todayCount, 2) + 1;
+
+        $status   = $this->calcStatus($employee, $type, $now, $sessionNum);
 
         Attendance::create([
             'employee_id'       => $employee->id,
@@ -499,37 +521,24 @@ class AttendanceController extends Controller
             'scanned_at'   => 'required|date',
         ]);
 
-        $employee = Employee::find($request->employee_id);
+        $employee  = Employee::with('company')->find($request->employee_id);
         $scannedAt = \Carbon\Carbon::parse($request->scanned_at);
 
-        // Auto-calculate check_in_status / check_out_status / ot_seconds
-        $workStartStr = $employee->work_start ?? '08:00:00';
-        $workEndStr   = $employee->work_end   ?? '17:00:00';
+        $priorCount = Attendance::where('employee_id', $request->employee_id)
+            ->whereDate('scanned_at', $scannedAt->toDateString())
+            ->where('scanned_at', '<', $scannedAt)
+            ->count();
+        $sessionNum = intdiv($priorCount, 2) + 1;
 
-        $workStart  = \Carbon\Carbon::parse($scannedAt->toDateString() . ' ' . $workStartStr);
-        $workEnd    = \Carbon\Carbon::parse($scannedAt->toDateString() . ' ' . $workEndStr);
-        $graceLimit = $workStart->copy()->addMinutes(15);
-
-        $checkInStatus  = null;
-        $checkOutStatus = null;
-        $otSeconds      = 0;
-
-        if ($request->type === 'in') {
-            $checkInStatus = $scannedAt->lessThanOrEqualTo($graceLimit) ? 'on_time' : 'late';
-        } else {
-            $checkOutStatus = $scannedAt->greaterThanOrEqualTo($workEnd) ? 'on_time' : 'early';
-            if ($scannedAt->greaterThan($workEnd)) {
-                $otSeconds = max(0, $scannedAt->getTimestamp() - $workEnd->getTimestamp());
-            }
-        }
+        $status = $this->calcStatus($employee, $request->type, $scannedAt, $sessionNum);
 
         Attendance::create([
             'employee_id'       => $request->employee_id,
             'location_id'       => $request->location_id,
             'type'              => $request->type,
-            'check_in_status'   => $checkInStatus,
-            'check_out_status'  => $checkOutStatus,
-            'ot_seconds'        => $otSeconds,
+            'check_in_status'   => $status['checkInStatus'],
+            'check_out_status'  => $status['checkOutStatus'],
+            'ot_seconds'        => $status['otSeconds'],
             'scanned_lat'       => null,
             'scanned_lng'       => null,
             'distance_meters'   => null,
@@ -563,37 +572,25 @@ class AttendanceController extends Controller
             'scanned_at'  => 'required|date',
         ]);
 
-        $employee  = Employee::find($request->employee_id);
+        $employee  = Employee::with('company')->find($request->employee_id);
         $scannedAt = \Carbon\Carbon::parse($request->scanned_at);
 
-        // Recalculate status & OT
-        $workStartStr = $employee->work_start ?? '08:00:00';
-        $workEndStr   = $employee->work_end   ?? '17:00:00';
+        $priorCount = Attendance::where('employee_id', $request->employee_id)
+            ->whereDate('scanned_at', $scannedAt->toDateString())
+            ->where('scanned_at', '<', $scannedAt)
+            ->where('id', '!=', $attendance->id)
+            ->count();
+        $sessionNum = intdiv($priorCount, 2) + 1;
 
-        $workStart  = \Carbon\Carbon::parse($scannedAt->toDateString() . ' ' . $workStartStr);
-        $workEnd    = \Carbon\Carbon::parse($scannedAt->toDateString() . ' ' . $workEndStr);
-        $graceLimit = $workStart->copy()->addMinutes(15);
-
-        $checkInStatus  = null;
-        $checkOutStatus = null;
-        $otSeconds      = 0;
-
-        if ($request->type === 'in') {
-            $checkInStatus = $scannedAt->lessThanOrEqualTo($graceLimit) ? 'on_time' : 'late';
-        } else {
-            $checkOutStatus = $scannedAt->greaterThanOrEqualTo($workEnd) ? 'on_time' : 'early';
-            if ($scannedAt->greaterThan($workEnd)) {
-                $otSeconds = max(0, $scannedAt->getTimestamp() - $workEnd->getTimestamp());
-            }
-        }
+        $status = $this->calcStatus($employee, $request->type, $scannedAt, $sessionNum);
 
         $attendance->update([
             'employee_id'       => $request->employee_id,
             'location_id'       => $request->location_id,
             'type'              => $request->type,
-            'check_in_status'   => $checkInStatus,
-            'check_out_status'  => $checkOutStatus,
-            'ot_seconds'        => $otSeconds,
+            'check_in_status'   => $status['checkInStatus'],
+            'check_out_status'  => $status['checkOutStatus'],
+            'ot_seconds'        => $status['otSeconds'],
             'location_verified' => true,
             'scanned_at'        => $scannedAt,
             'ip_address'        => $attendance->ip_address === 'admin'
