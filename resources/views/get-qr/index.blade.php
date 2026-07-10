@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Employee QR Codes — QR Check-In</title>
+    <title>{{ $company ? $company->name . ' QR Codes' : 'All Employee QR Codes' }} — QR Check-In</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -133,7 +133,7 @@
         }
         .table tbody tr:hover { background: #263348; }
 
-        .emp-name { font-weight: 600; color: #0f172a; font-size: 13.5px; }
+        .emp-name { font-weight: 600; color: #f1f5f9; font-size: 13.5px; }
         .emp-id   { color: #64748b; font-size: 12px; font-family: monospace; }
         .work-hrs { font-size: 12px; color: #94a3b8; }
 
@@ -266,6 +266,20 @@
             align-items: flex-start;
             margin-bottom: 10px;
         }
+
+        /* Company switcher pills */
+        .switcher-btn {
+            font-size: 12px;
+            padding: 6px 12px;
+            border-radius: 8px;
+            border: 1px solid #334155;
+            text-decoration: none;
+            background: transparent;
+            color: #94a3b8;
+            transition: background .15s, color .15s;
+        }
+        .switcher-btn:hover { background: #263348; color: #f1f5f9; }
+        .switcher-btn.active { background: #10b981; color: #fff; border-color: #10b981; }
     </style>
 </head>
 <body>
@@ -281,12 +295,35 @@
 
 <div class="content">
 
-    <div class="page-header">
+    <!-- <div class="page-header">
         <div>
-            <h5>All Employees</h5>
-            <small>{{ $employees->count() }} employees registered</small>
+            <h5>{{ $company ? $company->name : 'All Companies' }}</h5>
+            <small>{{ $employees->count() }} employee{{ $employees->count() !== 1 ? 's' : '' }} registered</small>
         </div>
-    </div>
+        @if($companies->count() > 1)
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+            <a href="{{ route('get-qr.index') }}" class="switcher-btn {{ !$company ? 'active' : '' }}">All</a>
+            @foreach($companies as $c)
+            @if($c->code)
+            <a href="{{ route('get-qr.show', $c->code) }}" class="switcher-btn {{ $company?->id === $c->id ? 'active' : '' }}">{{ $c->name }}</a>
+            @endif
+            @endforeach
+        </div>
+        @endif
+    </div> -->
+
+    {{-- Pre-compute QR data once for all employees --}}
+    @php
+        $qrFormat  = extension_loaded('imagick') ? 'png' : 'svg';
+        $qrMime    = $qrFormat === 'svg' ? 'image/svg+xml' : 'image/png';
+        $qrDataMap = [];
+        foreach ($employees as $emp) {
+            $url     = route('employees.check-in-page', $emp->qr_token);
+            $code    = \SimpleSoftwareIO\QrCode\Facades\QrCode::format($qrFormat)
+                           ->size(300)->errorCorrection('H')->generate($url);
+            $qrDataMap[$emp->id] = "data:{$qrMime};base64," . base64_encode((string) $code);
+        }
+    @endphp
 
     {{-- Desktop table --}}
     <div class="card d-none d-md-block">
@@ -307,15 +344,6 @@
                 </thead>
                 <tbody>
                     @forelse($employees as $employee)
-                    @php
-                        $format      = extension_loaded('imagick') ? 'png' : 'svg';
-                        $checkInUrl  = route('employees.check-in-page', $employee->qr_token);
-                        $qrCode      = \SimpleSoftwareIO\QrCode\Facades\QrCode::format($format)
-                                           ->size(300)->errorCorrection('H')->generate($checkInUrl);
-                        $qrBase64    = base64_encode((string) $qrCode);
-                        $qrMime      = $format === 'svg' ? 'image/svg+xml' : 'image/png';
-                        $qrDataUrl   = "data:{$qrMime};base64,{$qrBase64}";
-                    @endphp
                     <tr>
                         <td class="text-muted">{{ $loop->iteration }}</td>
                         <td>
@@ -326,7 +354,7 @@
                             @if($employee->department)
                             <span class="dept-badge">{{ $employee->department }}</span>
                             @else
-                            <span class="text-muted">—</span>
+                            <span style="color:#475569">—</span>
                             @endif
                         </td>
                         <td>
@@ -336,13 +364,12 @@
                             </span>
                         </td>
                         <td class="text-center">
-                            <button class="btn-qr" onclick="showQr(
-                                '{{ addslashes($employee->name) }}',
-                                '{{ $employee->employee_id }}',
-                                '{{ addslashes($employee->department ) }}',
-                                '{{ $qrDataUrl }}',
-                                '{{ $employee->employee_id }}-qr.{{ $format }}'
-                            )">
+                            <button class="btn-qr qr-trigger"
+                                data-name="{{ $employee->name }}"
+                                data-empid="{{ $employee->employee_id }}"
+                                data-dept="{{ $employee->department ?? '' }}"
+                                data-url="{{ $qrDataMap[$employee->id] }}"
+                                data-file="{{ $employee->employee_id }}-qr.{{ $qrFormat }}">
                                 <i class="bi bi-qr-code"></i> View QR
                             </button>
                         </td>
@@ -365,15 +392,6 @@
     {{-- Mobile cards --}}
     <div class="d-md-none">
         @forelse($employees as $employee)
-        @php
-            $format      = extension_loaded('imagick') ? 'png' : 'svg';
-            $checkInUrl  = route('employees.check-in-page', $employee->qr_token);
-            $qrCode      = \SimpleSoftwareIO\QrCode\Facades\QrCode::format($format)
-                               ->size(300)->errorCorrection('H')->generate($checkInUrl);
-            $qrBase64    = base64_encode((string) $qrCode);
-            $qrMime      = $format === 'svg' ? 'image/svg+xml' : 'image/png';
-            $qrDataUrl   = "data:{$qrMime};base64,{$qrBase64}";
-        @endphp
         <div class="emp-card">
             <div class="emp-card-top">
                 <div>
@@ -388,13 +406,12 @@
                 <i class="bi bi-clock me-1" style="color:#10b981"></i>
                 {{ $employee->workStartFormatted() }} – {{ $employee->workEndFormatted() }}
             </div>
-            <button class="btn-qr w-100 justify-content-center" onclick="showQr(
-                '{{ addslashes($employee->name) }}',
-                '{{ $employee->employee_id }}',
-                '{{ addslashes($employee->department ) }}',
-                '{{ $qrDataUrl }}',
-                '{{ $employee->employee_id }}-qr.{{ $format }}'
-            )">
+            <button class="btn-qr qr-trigger w-100 justify-content-center"
+                data-name="{{ $employee->name }}"
+                data-empid="{{ $employee->employee_id }}"
+                data-dept="{{ $employee->department ?? '' }}"
+                data-url="{{ $qrDataMap[$employee->id] }}"
+                data-file="{{ $employee->employee_id }}-qr.{{ $qrFormat }}">
                 <i class="bi bi-qr-code"></i> View QR Code
             </button>
         </div>
@@ -427,11 +444,11 @@
 
 <script>
 function showQr(name, empId, dept, dataUrl, filename) {
-    document.getElementById('qrName').textContent = name;
-    document.getElementById('qrSub').textContent  = empId + (dept ? ' · ' + dept : '');
-    document.getElementById('qrImg').src          = dataUrl;
-    document.getElementById('qrDownloadBtn').href = dataUrl;
-    document.getElementById('qrDownloadBtn').download = filename;
+    document.getElementById('qrName').textContent        = name;
+    document.getElementById('qrSub').textContent         = empId + (dept ? ' · ' + dept : '');
+    document.getElementById('qrImg').src                 = dataUrl;
+    document.getElementById('qrDownloadBtn').href        = dataUrl;
+    document.getElementById('qrDownloadBtn').download    = filename;
     document.getElementById('qrOverlay').classList.add('show');
     document.body.style.overflow = 'hidden';
 }
@@ -439,10 +456,17 @@ function hideQr() {
     document.getElementById('qrOverlay').classList.remove('show');
     document.body.style.overflow = '';
 }
-function closeQrOverlay(e) {
-    if (e.target === document.getElementById('qrOverlay')) hideQr();
-}
-document.addEventListener('keydown', e => { if (e.key === 'Escape') hideQr(); });
+
+document.getElementById('qrOverlay').addEventListener('click', function (e) {
+    if (e.target === this) hideQr();
+});
+document.addEventListener('keydown', function (e) { if (e.key === 'Escape') hideQr(); });
+
+document.querySelectorAll('.qr-trigger').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+        showQr(this.dataset.name, this.dataset.empid, this.dataset.dept, this.dataset.url, this.dataset.file);
+    });
+});
 </script>
 
 </body>

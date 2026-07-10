@@ -129,7 +129,8 @@ Route::post('/attendance/employee-process', [AttendanceController::class, 'emplo
 Route::post('/devices/register', [EmployeeController::class, 'registerDevice'])->name('devices.register');
 
 // Get QR codes (public — no login needed)
-Route::get('/get-qr', [GetqrController::class, 'index'])->name('get-qr.index');
+Route::get('/get-qr',         [GetqrController::class, 'index'])->name('get-qr.index');
+Route::get('/get-qr/{code}',  [GetqrController::class, 'index'])->name('get-qr.show');
 
 // ── Employee Portal ───────────────────────────────────────────
 Route::prefix('portal')->name('portal.')->group(function () {

@@ -1,15 +1,15 @@
 <?php
-// app/Http/Controllers/EmployeeController.php
+
 namespace App\Http\Controllers;
 
 use App\Models\Company;
+use App\Models\Device;
 use App\Models\Employee;
 use App\Models\Location;
-use Illuminate\Http\Request;
-use SimpleSoftwareIO\QrCode\Facades\QrCode;
-use App\Models\Device;
-use Illuminate\Support\Str;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Auth;
+use SimpleSoftwareIO\QrCode\Facades\QrCode;
 
 class EmployeeController extends Controller
 {
@@ -19,12 +19,15 @@ class EmployeeController extends Controller
         $employees = Employee::withCount('attendances')
             ->when($cid, fn($q) => $q->where('company_id', $cid))
             ->orderBy('employee_id')->get();
-        return view('employees.index', compact('employees'));
+        $companies = Auth::user()->is_super_admin
+            ? Company::whereNotNull('code')->orderBy('name')->get()
+            : collect();
+        return view('employees.index', compact('employees', 'companies'));
     }
 
     public function create()
     {
-        $companies = auth()->user()->is_super_admin ? Company::orderBy('name')->get() : collect();
+        $companies = Auth::user()->is_super_admin ? Company::orderBy('name')->get() : collect();
         return view('employees.create', compact('companies'));
     }
 
@@ -45,9 +48,11 @@ class EmployeeController extends Controller
             'company_id'     => 'nullable|exists:companies,id',
         ]);
 
-        $companyId  = auth()->user()->is_super_admin
+        /** @var \App\Models\User $authUser */
+        $authUser  = Auth::user();
+        $companyId = $authUser->is_super_admin
             ? $request->company_id
-            : auth()->user()->company_id;
+            : $authUser->company_id;
 
         $employeeId = $this->generateEmployeeId($companyId);
 
@@ -136,7 +141,7 @@ class EmployeeController extends Controller
 
     private function qrFilename(string $basename, string $format): string
     {
-        return $basename . '-qr.' . ($format === 'svg' ? 'svg' : 'png');
+        return "{$basename}-qr.{$format}";
     }
 
     // Show personal QR code (employee shows this to scanner, or scans location QR)
@@ -175,7 +180,7 @@ class EmployeeController extends Controller
     }
 
     // Public endpoint: register a device for an employee (employee provides employee_id + password)
-    public function registerDevice(Request $request): \Illuminate\Http\JsonResponse
+    public function registerDevice(Request $request): JsonResponse
     {
         $request->validate([
             'qr_token'    => 'required|string',   // employee's own QR token = identity proof
@@ -269,7 +274,7 @@ class EmployeeController extends Controller
     public function generateDeviceToken(Request $request, Employee $employee)
     {
         $token = bin2hex(random_bytes(24));
-        $device = Device::create(['employee_id' => $employee->id, 'name' => 'Admin generated', 'token' => $token]);
+        Device::create(['employee_id' => $employee->getKey(), 'name' => 'Admin generated', 'token' => $token]);
         return redirect()->back()->with('success', 'Device token generated.')->with('device_token', $token);
     }
 

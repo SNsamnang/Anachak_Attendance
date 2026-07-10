@@ -5,6 +5,14 @@ namespace App\Models;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
 
+/**
+ * @property int         $id
+ * @property string      $name
+ * @property string      $email
+ * @property bool        $is_super_admin
+ * @property int|null    $role_id
+ * @property int|null    $company_id
+ */
 class User extends Authenticatable
 {
     use Notifiable;

@@ -7,9 +7,38 @@
         <h6 class="fw-bold mb-0">All Employees</h6>
         <small class="text-muted">{{ $employees->count() }} total</small>
     </div>
-    <a href="{{ route('employees.create') }}" class="btn btn-primary btn-sm">
-        <i class="bi bi-plus-lg me-1"></i> Add Employee
-    </a>
+    <div class="d-flex gap-2">
+        @if(auth()->user()->is_super_admin)
+            @if($companies->isNotEmpty())
+            <div class="dropdown">
+                <button class="btn btn-outline-secondary btn-sm dropdown-toggle" type="button" data-bs-toggle="dropdown">
+                    <i class="bi bi-qr-code me-1"></i> QR Codes
+                </button>
+                <ul class="dropdown-menu dropdown-menu-end">
+                    <li><a class="dropdown-item" href="{{ route('get-qr.index') }}">All Companies</a></li>
+                    <li><hr class="dropdown-divider"></li>
+                    @foreach($companies as $c)
+                    <li><a class="dropdown-item" href="{{ route('get-qr.show', $c->code) }}">{{ $c->name }}</a></li>
+                    @endforeach
+                </ul>
+            </div>
+            @else
+            <a href="{{ route('get-qr.index') }}" class="btn btn-outline-secondary btn-sm">
+                <i class="bi bi-qr-code me-1"></i> QR Codes
+            </a>
+            @endif
+        @else
+            @php $code = auth()->user()->company?->code @endphp
+            @if($code)
+            <a href="{{ route('get-qr.show', $code) }}" class="btn btn-outline-secondary btn-sm" target="_blank">
+                <i class="bi bi-qr-code me-1"></i> QR Codes
+            </a>
+            @endif
+        @endif
+        <a href="{{ route('employees.create') }}" class="btn btn-primary btn-sm">
+            <i class="bi bi-plus-lg me-1"></i> Add Employee
+        </a>
+    </div>
 </div>
 
 {{-- Desktop table --}}
