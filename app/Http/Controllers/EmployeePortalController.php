@@ -136,12 +136,25 @@ class EmployeePortalController extends Controller
             ->whereDate('scanned_at', '<=', $dateTo)
             ->sum('ot_seconds');
 
-        $locations = Location::where('is_active', true)->orderBy('name')->get();
+        $locations = $employee->company->locations()
+            ->where('is_active', true)
+            ->orderBy('name')
+            ->get()
+            ->unique('name')
+            ->values();
 
         return view('portal.dashboard', compact(
-            'employee', 'totalDays', 'lateDays', 'onTimeDays',
-            'totalOtSeconds', 'todayRecords', 'history',
-            'monthlyOt', 'dateFrom', 'dateTo', 'locations'
+            'employee',
+            'totalDays',
+            'lateDays',
+            'onTimeDays',
+            'totalOtSeconds',
+            'todayRecords',
+            'history',
+            'monthlyOt',
+            'dateFrom',
+            'dateTo',
+            'locations'
         ));
     }
 
@@ -214,15 +227,18 @@ class EmployeePortalController extends Controller
             $typeLabel = '📅 Day Off';
         } else {
             $period    = $leave->leave_date->format('d M Y') . ' '
-                       . substr($leave->start_time, 0, 5) . '–' . substr($leave->end_time, 0, 5);
+                . substr($leave->start_time, 0, 5) . '–' . substr($leave->end_time, 0, 5);
             $typeLabel = '🕐 Time Off';
         }
 
         app(TelegramService::class)
             ->forCompany($employee->company)
             ->notifyLeaveSubmitted(
-                $employee->name, $employee->employee_id,
-                $typeLabel, $period, $leave->reason
+                $employee->name,
+                $employee->employee_id,
+                $typeLabel,
+                $period,
+                $leave->reason
             );
     }
 

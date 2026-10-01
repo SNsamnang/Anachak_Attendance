@@ -174,7 +174,12 @@ class EmployeeController extends Controller
     public function employeeCheckInPage(string $token)
     {
         $employee = Employee::where('qr_token', $token)->firstOrFail();
-        $locations = Location::where('is_active', true)->orderBy('name')->get();
+        $locations = $employee->company->locations()
+            ->where('is_active', true)
+            ->orderBy('name')
+            ->get()
+            ->unique('name')
+            ->values();
 
         return view('employees.check-in', compact('employee', 'locations', 'token'));
     }

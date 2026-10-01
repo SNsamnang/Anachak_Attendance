@@ -133,7 +133,7 @@
         }
         .table tbody tr:hover { background: #263348; }
 
-        .emp-name { font-weight: 600; color: #f1f5f9; font-size: 13.5px; }
+        .emp-name { font-weight: 600; color: green; font-size: 13.5px; }
         .emp-id   { color: #64748b; font-size: 12px; font-family: monospace; }
         .work-hrs { font-size: 12px; color: #94a3b8; }
 
