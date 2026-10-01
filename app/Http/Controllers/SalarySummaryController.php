@@ -167,7 +167,7 @@ class SalarySummaryController extends Controller
             ->orderBy('date_of_record')
             ->get();
 
-        $otEligible = optional($employee->otStatus)->eligible ?? true;
+        $otEligible = optional($employee->otStatus)->eligible ?? false;
         $filename   = 'salary-' . $employee->employee_id . '-' . $dateFrom . '-' . $dateTo . '.pdf';
 
         $pdf = Pdf::loadView('salary-summaries.pdf', compact('employee', 'rows', 'dateFrom', 'dateTo', 'otEligible'))

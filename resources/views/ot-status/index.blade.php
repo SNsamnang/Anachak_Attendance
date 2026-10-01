@@ -72,7 +72,7 @@
     <span class="badge bg-secondary">Not Eligible</span> will never receive OT pay,
     even if they check out late. Employees marked
     <span class="badge bg-success">Eligible</span> earn OT for any day where they
-    check out more than 1 hour.
+    check out after their scheduled work end. OT is calculated from work end to check-out time.
 </div>
 
 @endsection

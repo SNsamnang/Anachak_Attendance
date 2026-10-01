@@ -25,9 +25,9 @@ class OtStatusController extends Controller
         $cid = $this->authCompanyId();
         $employees = Employee::when($cid, fn($q) => $q->where('company_id', $cid))
             ->orderBy('name')->get()->map(function ($emp) {
-            $emp->ot_eligible = optional($emp->otStatus)->eligible ?? true;
-            return $emp;
-        });
+                $emp->ot_eligible = optional($emp->otStatus)->eligible ?? false;
+                return $emp;
+            });
 
         return view('ot-status.index', compact('employees'));
     }
@@ -38,7 +38,7 @@ class OtStatusController extends Controller
         $this->checkSalaryAccess();
         $otStatus = OtStatus::firstOrCreate(
             ['employee_id' => $employee->id],
-            ['eligible' => true]
+            ['eligible' => false]
         );
 
         $otStatus->update(['eligible' => !$otStatus->eligible]);

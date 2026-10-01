@@ -63,6 +63,18 @@ class SalarySummaryService
         // Constants
         $salaryPerDay  = (float) $employee->salary / 26;  // working days per month
         $salaryPerHour = $salaryPerDay / 8;               // 8 hours per day
+        $checkOutWorkEndStr = $employee->work_end ?: '17:00:00';
+
+        if ($checkOut && ($employee->sessions ?? 1) === 2 && $employee->session2_start) {
+            $priorAttendanceCount = Attendance::where('employee_id', $employee->id)
+                ->whereDate('scanned_at', $dateRecord)
+                ->where('scanned_at', '<', $checkOut->scanned_at)
+                ->count();
+
+            if (intdiv($priorAttendanceCount, 2) + 1 === 2) {
+                $checkOutWorkEndStr = $employee->session2_end ?? '17:00:00';
+            }
+        }
 
         // ── Day off (no check-in at all) ────────────────────────
         if (!$checkIn) {
@@ -87,7 +99,7 @@ class SalarySummaryService
                 $workStart    = Carbon::parse($dateRecord . ' ' . $workStartStr);
                 $checkInTime  = $checkIn->scanned_at;
 
-                if ($checkInTime->greaterThan($workStart)) {
+                if ($checkIn->check_in_status !== 'on_time' && $checkInTime->greaterThan($workStart)) {
                     $lateMinutes = (int) $workStart->diffInMinutes($checkInTime);
 
                     if ($lateMinutes >= 15 && $lateMinutes < 60) {
@@ -99,7 +111,6 @@ class SalarySummaryService
 
                         $summary->late        = round($lateMinutes / 60, 2);
                         $summary->late_amount = $hasLeave ? 3.00 : 5.00;
-
                     } elseif ($lateMinutes >= 60) {
                         // Hourly deduction: salary / 26 days / 8 hours × rounded-up late hours
                         $lateHours = (int) ceil($lateMinutes / 60);
@@ -119,8 +130,7 @@ class SalarySummaryService
         // ── Early leave calculation ─────────────────────────────────
         if ($checkOut) {
             try {
-                $workEndStr   = $employee->work_end ?: '17:00:00';
-                $workEnd      = Carbon::parse($dateRecord . ' ' . $workEndStr);
+                $workEnd      = Carbon::parse($dateRecord . ' ' . $checkOutWorkEndStr);
                 $checkOutTime = $checkOut->scanned_at;
 
                 if ($checkOutTime->lessThan($workEnd)) {
@@ -143,20 +153,19 @@ class SalarySummaryService
             }
         }
 
-        // ── OT calculation (only if employee is OT-eligible) ───────
-        $otEligible = optional($employee->otStatus)->eligible ?? true;
+        // ── OT calculation (only if employee is explicitly OT-eligible) ───────
+        $otEligible = optional($employee->otStatus)->eligible ?? false;
 
         if ($otEligible && $checkOut) {
             try {
-                $workEndStr = $employee->work_end ?: '17:00:00';
-                $workEnd    = Carbon::parse($dateRecord . ' ' . $workEndStr);
+                $workEnd    = Carbon::parse($dateRecord . ' ' . $checkOutWorkEndStr);
                 $checkOutTime = $checkOut->scanned_at;
 
                 if ($checkOutTime->greaterThan($workEnd)) {
-                    $otMinutes = $workEnd->diffInMinutes($checkOutTime);
+                    $otSeconds = max(0, $checkOutTime->getTimestamp() - $workEnd->getTimestamp());
 
-                    if ($otMinutes > 0) {
-                        $otHours = round($otMinutes / 60, 2);
+                    if ($otSeconds > 0) {
+                        $otHours = round($otSeconds / 3600, 2);
                         $summary->ot        = $otHours;
                         $summary->ot_amount = round($salaryPerHour * $otHours, 2);
                     }
